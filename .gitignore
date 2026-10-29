@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.venv/
+data/sales.db
+.env
+.pytest_cache/

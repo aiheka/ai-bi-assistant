@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mini AI BI Assistant</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1c2430;--mute:#667085;--line:#e3e7ee;--accent:#2457d6;--ok:#12805c;--bad:#b42318;--bar:#cddcff}
+@media (prefers-color-scheme:dark){:root{--bg:#10151c;--card:#18202a;--ink:#e8edf4;--mute:#97a3b4;--line:#2a3544;--accent:#7aa2ff;--ok:#4cc79a;--bad:#ff8a80;--bar:#2b3f6e}}
+*{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--ink)}
+main{max-width:920px;margin:0 auto;padding:24px 16px 64px}
+h1{font-size:22px;margin:0 0 4px}.sub{color:var(--mute);margin:0 0 20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+form{display:flex;gap:8px}input{flex:1;padding:11px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
+button{padding:11px 18px;border:0;border-radius:8px;background:var(--accent);color:#fff;font:inherit;cursor:pointer}button:disabled{opacity:.6}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}.chip{background:transparent;color:var(--accent);border:1px solid var(--line);padding:5px 10px;font-size:13px;border-radius:999px}
+.answer{font-size:17px;margin:0 0 6px}.err{color:var(--bad)}.badge{display:inline-block;font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--mute);margin-right:6px}
+.badge.ok{color:var(--ok);border-color:var(--ok)}.badge.bad{color:var(--bad);border-color:var(--bad)}
+table{border-collapse:collapse;width:100%;font-size:14px}th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:right}th:first-child,td:first-child{text-align:left}
+th{color:var(--mute);font-weight:600}.wrap{overflow-x:auto}.cell{position:relative}.cell i{position:absolute;inset:3px auto 3px 0;background:var(--bar);z-index:0;border-radius:4px}.cell span{position:relative;z-index:1}
+details{margin-top:10px}summary{cursor:pointer;color:var(--mute)}pre{background:var(--bg);padding:10px;border-radius:8px;overflow-x:auto;font-size:12.5px}
+ul{margin:6px 0 0;padding-left:18px;color:var(--mute);font-size:13px}.hint{color:var(--mute);font-size:13px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Mini AI Business Intelligence Assistant</h1>
+  <p class="sub">Ask about the sales data in plain English. Every number comes from a database query and is cross-checked.</p>
+  <div class="card">
+    <form id="f"><input id="q" maxlength="500" placeholder="e.g. Which product generated the highest revenue?" autofocus><button id="go">Ask</button></form>
+    <div class="chips" id="chips"></div>
+  </div>
+  <div id="out"></div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = v => typeof v === "number" ? v.toLocaleString("en-US", {maximumFractionDigits: 2}) : (v ?? "–");
+
+function table(cols, rows){
+  const numeric = cols.filter(c => rows.some(r => typeof r[c] === "number" && !["rank"].includes(c)));
+  const barCol = ["revenue","units","orders"].find(c => cols.includes(c));
+  const max = barCol ? Math.max(...rows.map(r => Math.abs(r[barCol] || 0)), 1) : 1;
+  const head = cols.map(c => `<th>${esc(c.replace(/_/g," "))}</th>`).join("");
+  const body = rows.map(r => "<tr>" + cols.map(c => {
+    if (c === barCol && typeof r[c] === "number")
+      return `<td><div class="cell"><i style="width:${Math.abs(r[c])/max*100}%"></i><span>${fmt(r[c])}</span></div></td>`;
+    return `<td>${esc(typeof r[c] === "number" ? fmt(r[c]) : r[c] ?? "–")}</td>`;
+  }).join("") + "</tr>").join("");
+  return `<div class="wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+function render(d){
+  if (!d.ok){
+    const hints = (d.error.hints||[]).map(h => `<li>${esc(h)}</li>`).join("");
+    return `<div class="card"><p class="answer err">${esc(d.error.message)}</p>${hints?`<ul>${hints}</ul>`:""}</div>`;
+  }
+  const v = d.verification || {};
+  const vb = v.checked ? (v.matches ? `<span class="badge ok">✓ cross-checked with independent pandas calc (${v.figures_compared} figures)</span>`
+                                    : `<span class="badge bad">⚠ mismatch with independent check</span>`)
+                       : `<span class="badge">no independent check</span>`;
+  const it = d.interpretation || {};
+  const fb = it.fallback_reason ? `<span class="badge">${esc(it.fallback_reason)}</span>` : "";
+  const sql = (d.queries||[]).map(q => `-- ${q.label}\n${q.sql}\n-- params: ${JSON.stringify(q.params)}`).join("\n\n");
+  return `<div class="card">
+    <p class="answer">${esc(d.answer)}</p>
+    <div>${vb}<span class="badge">interpreted by: ${esc(it.parser||"rules")}</span>${fb}</div>
+    ${d.rows && d.rows.length ? `<h4 style="margin:16px 0 6px">Supporting figures</h4>${table(d.columns, d.rows)}` : ""}
+    <details><summary>How this was computed</summary>
+      <p class="hint">Interpreted intent</p><pre>${esc(JSON.stringify(it.intent, null, 2))}</pre>
+      <p class="hint">SQL executed (read-only, parameterised)</p><pre>${esc(sql)}</pre>
+    </details>
+    <ul>${(d.notes||[]).map(n => `<li>${esc(n)}</li>`).join("")}</ul>
+  </div>`;
+}
+
+async function ask(question){
+  $("go").disabled = true; $("out").innerHTML = `<div class="card hint">Working…</div>`;
+  try{
+    const r = await fetch("/api/ask", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({question})});
+    $("out").innerHTML = render(await r.json());
+  }catch(e){ $("out").innerHTML = `<div class="card"><p class="err">Could not reach the server.</p></div>`; }
+  $("go").disabled = false;
+}
+$("f").addEventListener("submit", e => { e.preventDefault(); const q = $("q").value.trim(); if (q) ask(q); });
+fetch("/api/examples").then(r => r.json()).then(d => {
+  $("chips").innerHTML = d.examples.map(x => `<button type="button" class="chip">${esc(x)}</button>`).join("");
+  $("chips").querySelectorAll("button").forEach(b => b.onclick = () => { $("q").value = b.textContent; ask(b.textContent); });
+});
+</script>
+</body>
+</html>
