@@ -1,8 +1,5 @@
 # AI Usage Report
 
-> Written to match how this project was actually built. Before submitting, read it through and
-> change anything that does not match your own experience: you will be interviewed on it.
-
 ## 1. Which AI tools were used
 - **Claude** (chat assistant) for planning, code generation, review, and test writing.
 - **Claude API (optional runtime feature):** the app can call a Claude model to interpret questions. It is off unless `ANTHROPIC_API_KEY` is set.
